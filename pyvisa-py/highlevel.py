@@ -11,6 +11,7 @@
 """
 
 from __future__ import division, unicode_literals, print_function, absolute_import
+from ctypes import c_ulong
 
 import warnings
 
@@ -269,6 +270,27 @@ class PyVisaLibrary(highlevel.VisaLibraryBase):
         # from the session handle, dispatch to the write method of the session object.
         try:
             return self.sessions[session].write(data)
+        except KeyError:
+            return constants.StatusCode.error_invalid_object
+
+    def enable_event(self, session, event_type, mechanism, context=None):
+        pass
+
+    def wait_on_event(self, session, in_event_type, timeout):
+        out_event_type = c_ulong()
+        out_context = object()
+        ret = self.sessions[session].ibwait(in_event_type)
+        return out_event_type.value, out_context, ret
+
+    def read_stb(self, session):
+        try:
+            return self.sessions[session].serial_poll()
+        except KeyError:
+            return constants.StatusCode.error_invalid_object
+
+    def clear(self, session):
+        try:
+            return self.sessions[session].clear()
         except KeyError:
             return constants.StatusCode.error_invalid_object
 

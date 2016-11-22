@@ -146,7 +146,7 @@ class GPIBSession(Session):
         try:
             self.interface.write(data)
 
-            return SUCCESS
+            return data.__len__(), SUCCESS
 
         except gpib.GpibError:
             # 0x4000 = 16384 = TIMO
@@ -154,6 +154,43 @@ class GPIBSession(Session):
                 return 0, StatusCode.error_timeout
             else:
                 return 0, StatusCode.error_system_error
+
+    def serial_poll(self):
+        """Serial polls the device and returns the status byte.
+
+        Corresponds to viWrite function of the VISA library.
+
+        :return: A number representing the status byte.
+        :rtype: int, VISAStatus
+        """
+        logger.debug('GPIB.serial_poll')
+        try:
+            stb = self.interface.serial_poll()
+            return stb[0], SUCCESS
+
+        except gpib.GpibError:
+            # 0x4000 = 16384 = TIMO
+            if self.interface.ibsta() & 16384:
+                return 0, StatusCode.error_timeout            
+            else:
+                return 0, StatusCode.error_system_error
+
+    def ibwait(self, status_mask):
+        logger.debug('GPIB.ibwait')
+        try:
+            status_mask = 0x4800
+            sta = self.interface.wait(status_mask)
+            return SUCCESS
+
+        except gpib.GpibError:
+            # 0x4000 = 16384 = TIMO
+            if self.interface.ibsta() & 16384:
+                return constants.StatusCode.error_timeout
+            else:
+                return StatusCode.error_system_error
+
+    def clear(self):
+        gpib.clear(self.handle)
 
     def _get_attribute(self, attribute):
         """Get the value for a given VISA attribute for this session.
