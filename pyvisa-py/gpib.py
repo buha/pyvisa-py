@@ -93,6 +93,7 @@ class GPIBSession(Session):
         pad = self.parsed.primary_address
         self.handle = gpib.dev(int(minor), int(pad))
         self.interface = Gpib(self.handle)
+        self.previous_stb = 0
 
     @property
     def timeout(self):
@@ -172,7 +173,7 @@ class GPIBSession(Session):
             else:
                 return 0, StatusCode.error_system_error
 
-    def serial_poll(self):
+    def serial_poll(self, previous=False):
         """Serial polls the device and returns the status byte.
 
         Corresponds to TODO function of the VISA library.
@@ -182,8 +183,12 @@ class GPIBSession(Session):
         """
         logger.debug('GPIB.serial_poll')
         try:
-            stb = self.interface.serial_poll()
-            return stb[0], StatusCode.success
+            if previous == True:
+                stb = self.previous_stb
+            else:
+                stb = self.interface.serial_poll()[0]
+                self.previous_stb = stb
+            return stb, StatusCode.success
 
         except gpib.GpibError:
             if self.interface.ibsta() & sta.TIMO:
@@ -206,7 +211,7 @@ class GPIBSession(Session):
 
             # loop until the status byte has bit 6 set
             while True:
-                stb = self.interface.serial_poll()
+                stb = self.serial_poll()
                 if stb[0] & 0x40:
                     return StatusCode.success
                 elif perf_counter() > timeout:

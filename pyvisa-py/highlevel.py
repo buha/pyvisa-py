@@ -282,9 +282,9 @@ class PyVisaLibrary(highlevel.VisaLibraryBase):
         ret = self.sessions[session].wait(in_event_type)
         return out_event_type.value, out_context, ret
 
-    def read_stb(self, session):
+    def read_stb(self, session, previous=False):
         try:
-            return self.sessions[session].serial_poll()
+            return self.sessions[session].serial_poll(previous)
         except KeyError:
             return constants.StatusCode.error_invalid_object
 
