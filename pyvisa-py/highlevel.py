@@ -279,7 +279,7 @@ class PyVisaLibrary(highlevel.VisaLibraryBase):
     def wait_on_event(self, session, in_event_type, timeout):
         out_event_type = c_ulong()
         out_context = object()
-        ret = self.sessions[session].ibwait(in_event_type)
+        ret = self.sessions[session].wait(in_event_type)
         return out_event_type.value, out_context, ret
 
     def read_stb(self, session):

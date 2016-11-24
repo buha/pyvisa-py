@@ -13,9 +13,9 @@
 from __future__ import division, unicode_literals, print_function, absolute_import
 from bisect import bisect
 
-from pyvisa import constants, logger
-
+from pyvisa import constants, logger, VisaIOError
 from .sessions import Session, UnknownAttribute
+from time import perf_counter, sleep
 
 try:
     import gpib
@@ -46,6 +46,26 @@ SUCCESS = StatusCode.success
 TIMETABLE = (0, 1e-2, 3e-2, 1e-1, 3e-1, 1e0, 3e0, 1e1, 3e1, 1e2, 3e2, 1e3, 3e3,
              1e4, 3e4, 1e5, 3e5, 1e6)
 
+# linux-gpib status definitions
+class sta:
+    NONE  =      0
+    DCAS  =    0x1
+    DTAS  =    0x2
+    LACS  =    0x4
+    TACS  =    0x8
+    ATN   =   0x10
+    CIC   =   0x20
+    REM   =   0x40
+    LOK   =   0x80
+    CMPL  =  0x100
+    EVENT =  0x200
+    SPOLL =  0x400
+    RQS   =  0x800
+    SRQI  = 0x1000
+    END   = 0x2000
+    TIMO  = 0x4000
+    ERR   = 0x8000
+    ALL   = 0xFFFF
 
 # TODO: Check board indices other than 0.
 BOARD = 0
@@ -123,8 +143,7 @@ class GPIBSession(Session):
         :rtype: bytes, constants.StatusCode
         """
 
-        # 0x2000 = 8192 = END
-        checker = lambda current: self.interface.ibsta() & 8192
+        checker = lambda current: self.interface.ibsta() & sta.END
 
         reader = lambda: self.interface.read(count)
 
@@ -145,12 +164,10 @@ class GPIBSession(Session):
 
         try:
             self.interface.write(data)
-
             return data.__len__(), SUCCESS
 
         except gpib.GpibError:
-            # 0x4000 = 16384 = TIMO
-            if self.interface.ibsta() & 16384:
+            if self.interface.ibsta() & sta.TIMO:
                 return 0, StatusCode.error_timeout
             else:
                 return 0, StatusCode.error_system_error
@@ -158,7 +175,7 @@ class GPIBSession(Session):
     def serial_poll(self):
         """Serial polls the device and returns the status byte.
 
-        Corresponds to viWrite function of the VISA library.
+        Corresponds to TODO function of the VISA library.
 
         :return: A number representing the status byte.
         :rtype: int, VISAStatus
@@ -166,28 +183,37 @@ class GPIBSession(Session):
         logger.debug('GPIB.serial_poll')
         try:
             stb = self.interface.serial_poll()
-            return stb[0], SUCCESS
+            return stb[0], StatusCode.success
 
         except gpib.GpibError:
-            # 0x4000 = 16384 = TIMO
-            if self.interface.ibsta() & 16384:
+            if self.interface.ibsta() & sta.TIMO:
                 return 0, StatusCode.error_timeout            
             else:
                 return 0, StatusCode.error_system_error
 
-    def ibwait(self, status_mask):
+    def wait(self, event_type):
+        '''
+        Autopolling does not work so we can't use gpib.wait with the 0x800 mask.
+        This function is a placeholder that does the same thing.
+        :param event_type:
+        :return:
+        '''
         logger.debug('GPIB.ibwait')
-        try:
-            status_mask = 0x4800
-            sta = self.interface.wait(status_mask)
-            return SUCCESS
 
-        except gpib.GpibError:
-            # 0x4000 = 16384 = TIMO
-            if self.interface.ibsta() & 16384:
-                return constants.StatusCode.error_timeout
-            else:
-                return StatusCode.error_system_error
+        if event_type == constants.VI_EVENT_SERVICE_REQ:
+            # ask gpib what timeout has been configured
+            timeout = perf_counter() + TIMETABLE[self.interface.ask(3)] / 1000.0
+
+            # loop until the status byte has bit 6 set
+            while True:
+                stb = self.interface.serial_poll()
+                if stb[0] & 0x40:
+                    return StatusCode.success
+                elif perf_counter() > timeout:
+                    raise VisaIOError(StatusCode.error_timeout)
+                sleep(0.01)
+        else:
+            raise NotImplementedError
 
     def clear(self):
         gpib.clear(self.handle)
